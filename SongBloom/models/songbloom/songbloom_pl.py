@@ -8,7 +8,6 @@ import numpy as np
 import random
 from omegaconf import OmegaConf
 import copy
-import lightning as pl
 import os, sys
 from safetensors.torch import load_file as safetensors_load_file
 
@@ -21,7 +20,7 @@ from ...g2p.lyric_common import key2processor, symbols, LABELS
 os.environ['TOKENIZERS_PARALLELISM'] = "false"
 
 
-class SongBloom_PL(pl.LightningModule):
+class SongBloom_PL(nn.Module):
     def __init__(self, cfg, vae):
         super().__init__()
         # 关闭自动优化
@@ -31,9 +30,9 @@ class SongBloom_PL(pl.LightningModule):
         self.vae = vae
         assert self.cfg.model['latent_dim'] == self.vae.channel_dim
 
-        self.save_hyperparameters(cfg)
-        for param in self.vae.parameters():
-            param.requires_grad = False
+        #self.save_hyperparameters(cfg)
+        #for param in self.vae.parameters():
+        #    param.requires_grad = False
                 
         # Build DiT
         model_cfg = OmegaConf.to_container(copy.deepcopy(cfg.model), resolve=True)

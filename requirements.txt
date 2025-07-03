@@ -4,7 +4,6 @@ transformers
 safetensors
 einops
 omegaconf
-lightning
 wordsegment
 g2p-en
 nltk==3.8.1

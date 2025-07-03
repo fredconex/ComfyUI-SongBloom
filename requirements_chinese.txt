@@ -4,7 +4,6 @@ pypinyin
 cn2an
 wordsegment
 g2p-en
-lightning
 nltk==3.8.1
 omegaconf
 torch

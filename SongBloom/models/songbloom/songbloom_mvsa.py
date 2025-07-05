@@ -157,9 +157,7 @@ class MVSA_DiTAR(StreamingModule):
         self.diffusion_objective = diffusion_objective
         self.timestep_sampler = timestep_sampler
         self.rng = torch.quasirandom.SobolEngine(1, scramble=True)
-        
-        self.init_weights(init_std=init_std)
-            
+                    
         
 
 
@@ -564,18 +562,3 @@ class MVSA_DiTAR(StreamingModule):
         
         
     
-    
-    def init_weights(self, init_std=0.02):
-        
-        def _init_weights(module, init_std=0.02):
-            if isinstance(module, nn.Linear):
-                module.weight.data.normal_(mean=0.0, std=init_std)
-                # torch.nn.init.xavier_uniform_(module.weight)
-                if module.bias is not None:
-                    nn.init.constant_(module.bias, 0)
-            elif isinstance(module, nn.Embedding):
-                module.weight.data.normal_(mean=0.0, std=init_std)
-                if module.padding_idx is not None:
-                    module.weight.data[module.padding_idx].zero_()
-                    
-        self.apply(partial(_init_weights, init_std=init_std))

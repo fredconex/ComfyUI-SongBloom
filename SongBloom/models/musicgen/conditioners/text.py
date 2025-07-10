@@ -127,7 +127,7 @@ class PhonemeTokenizerConditioner(TextConditioner):
             #import pdb; pdb.set_trace()
             # print(interpolated_embeds.shape, to_interpolate.shape, interpolate_size, )
             if to_interpolate.shape[0] == 0:
-                import pdb; pdb.set_trace()
+                pass
             this_interpolated_embeds = F.interpolate(to_interpolate.unsqueeze(0).transpose(2, 1), 
                                         size=interpolate_size, 
                                         mode='nearest-exact').squeeze(0).transpose(1, 0)

@@ -1,0 +1,15 @@
+[project]
+name = "SongBloom"
+description = "This is nodes for SongBloom."
+version = "1.0.0"
+license = {file = "LICENSE"}
+dependencies = ["torch", "torchaudio", "transformers", "safetensors", "einops", "omegaconf", "lightning", "wordsegment", "g2p-en", "nltk"]
+
+[project.urls]
+Repository = "https://github.com/fredconex/ComfyUI-SongBloom"
+#  Used by Comfy Registry https://comfyregistry.org
+
+[tool.comfy]
+PublisherId = "conex"
+DisplayName = "ComfyUI-SongBloom"
+Icon = ""

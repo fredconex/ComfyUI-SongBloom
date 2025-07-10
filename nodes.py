@@ -11,6 +11,7 @@ import numpy as np
 from typing import Tuple, Dict, Any, Optional
 import folder_paths
 from omegaconf import OmegaConf, DictConfig
+import ast
 
 # Import ComfyUI model management and interruption exception
 try:
@@ -43,7 +44,7 @@ def register_omegaconf_resolvers(cache_dir: str):
         pass
     
     resolvers = {
-        "eval": lambda x: eval(x),
+        "eval": lambda x: ast.literal_eval(x),
         "concat": lambda *x: [xxx for xx in x for xxx in xx],
         "get_fname": lambda x: os.path.splitext(os.path.basename(x))[0],
         "load_yaml": lambda x: OmegaConf.load(x),

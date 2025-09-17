@@ -24,6 +24,9 @@ OR if you want to use Chinese!
 Download to "ComfyUI/models/checkpoints".  
 https://huggingface.co/fredconex/SongBloom-safetensors/tree/main
 
+* New DPO model is available on huggingface too
+https://huggingface.co/fredconex/SongBloom-Safetensors/blob/main/songbloom_full_150s_dpo.safetensors
+
 https://github.com/user-attachments/assets/feffbebf-2cd6-4ab9-8ca6-ea77164ccca7
 
 

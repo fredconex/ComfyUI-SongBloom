@@ -33,16 +33,16 @@ _RESOLVERS_REGISTERED = False
 def register_omegaconf_resolvers(cache_dir: str):
     """Register OmegaConf resolvers globally to avoid conflicts"""
     global _RESOLVERS_REGISTERED
-    
+
     print(f"Registering OmegaConf resolvers with cache_dir: {cache_dir}")
-    
+
     # Clear existing resolvers if they exist
     try:
         OmegaConf.clear_resolver("dynamic_path")
         print("Cleared existing dynamic_path resolver")
     except:
         pass
-    
+
     resolvers = {
         "eval": lambda x: ast.literal_eval(x),
         "concat": lambda *x: [xxx for xx in x for xxx in xx],
@@ -50,7 +50,7 @@ def register_omegaconf_resolvers(cache_dir: str):
         "load_yaml": lambda x: OmegaConf.load(x),
         "dynamic_path": lambda x: x.replace("???", cache_dir)
     }
-    
+
     for name, resolver in resolvers.items():
         try:
             OmegaConf.register_new_resolver(name, resolver)
@@ -59,7 +59,7 @@ def register_omegaconf_resolvers(cache_dir: str):
             # Resolver already exists, skip
             print(f"Resolver {name} already exists, skipping...")
             pass
-    
+
     _RESOLVERS_REGISTERED = True
 
 try:
@@ -107,7 +107,7 @@ def debug_memory_usage(device):
         memory = torch.cuda.memory_allocated(device) / 1024**3
         max_memory = torch.cuda.max_memory_allocated(device) / 1024**3
         reserved = torch.cuda.memory_reserved(device) / 1024**3
-        
+
         print(f"Current allocated: {memory:.3f} GB")
         print(f"Max allocated: {max_memory:.3f} GB")
         print(f"Reserved: {reserved:.3f} GB")
@@ -116,14 +116,11 @@ class SongBloomModelLoader:
     """
     Node to load SongBloom model and VAE together with ComfyUI model management
     """
-    
+
     @staticmethod
     def _list_safetensors():
-        """List available .safetensors files in the checkpoints directory."""
-        checkpoints_dir = os.path.join(folder_paths.models_dir, "checkpoints")
-        if not os.path.exists(checkpoints_dir):
-            return []
-        return [f for f in os.listdir(checkpoints_dir) if f.endswith('.safetensors')]
+        """List available .safetensors files in the checkpoints directory, respecting extra_model_paths."""
+        return folder_paths.get_filename_list("checkpoints")
 
     @classmethod
     def INPUT_TYPES(cls):
@@ -139,60 +136,59 @@ class SongBloomModelLoader:
                 "force_offload": ("BOOLEAN", {"default": True, "tooltip": "Force model offloading to CPU after loading"}),
             }
         }
-    
+
     RETURN_TYPES = ("SONGBLOOM_MODEL",)
     RETURN_NAMES = ("model",)
     FUNCTION = "load_model"
     CATEGORY = "audio/songbloom"
-    
+
     def __init__(self):
         self.cache_dir = os.path.join(folder_paths.models_dir , "songbloom")
         os.makedirs(self.cache_dir, exist_ok=True)
         # Set config directory for resolvers
         self.config_dir = os.path.join(os.path.dirname(__file__), "SongBloom", "config")
-    
+
     def load_config(self, cfg_file: str) -> DictConfig:
         """Load configuration file with resolvers"""
         register_omegaconf_resolvers(self.config_dir)
         raw_cfg = OmegaConf.load(open(cfg_file, 'r'))
         return raw_cfg
-    
+
     def load_model(self, dtype: str, checkpoint: str, audio_len: int = 10, force_offload: bool = True, **kwargs):
         try:
             # Clean up memory before loading
             cleanup_memory()
-            
+
             # Get devices
             device, offload_device = get_devices()
-            
+
             print(f"Loading SongBloom model on device: {device}")
             if mm is not None:
                 debug_memory_usage(device)
-            
+
             print(f"Preparing to load SongBloom model: {model_name}")
-            
+
             # All files are local now
             # Use config_dir from instance variable
             cfg_path = os.path.join(self.config_dir, f"{model_name}.yaml")
             vae_cfg_path = os.path.join(self.config_dir, "stable_audio_1920_vae.json")
             g2p_path = os.path.join(self.config_dir, "vocab_g2p.yaml")
-            model_safetensor = os.path.join(folder_paths.models_dir, "checkpoints", checkpoint)
-            safetensor_path = model_safetensor
-            
+            safetensor_path = folder_paths.get_full_path("checkpoints", checkpoint)
+
             # Verify model file exists
             if not os.path.exists(safetensor_path):
                 raise FileNotFoundError(f"Model checkpoint not found: {safetensor_path}")
-            
+
             cfg = self.load_config(cfg_path)
             if hasattr(cfg, 'train_dataset'):
                 cfg.train_dataset.lyric_processor = "phoneme"
-            
+
             # Convert dtype string to torch dtype
             if dtype == 'float32':
                 torch_dtype = torch.float32
             elif dtype == 'bfloat16':
                 torch_dtype = torch.bfloat16
-            
+
             # Build the model - no external VAE needed
             if SongBloom_Sampler is None:
                 raise RuntimeError(
@@ -202,15 +198,15 @@ class SongBloomModelLoader:
                         _SONGBLOOM_IMPORT_ERROR or "SongBloom_Sampler is None."
                     )
                 )
-            
+
             print(f"Loading new model with dtype: {dtype}")
             model = SongBloom_Sampler.build_from_trainer(cfg, strict=True, dtype=torch_dtype, safetensor_path=safetensor_path)
             model.prompt_duration = cfg.sr * audio_len
             if hasattr(cfg, 'inference') and cfg.inference:
                 model.set_generation_params(**cfg.inference)
-            
+
             print(f"Model loaded on device: {model.device}")
-            
+
             # Create model config with loaded model
             model_config = {
                 "model": model,
@@ -223,7 +219,7 @@ class SongBloomModelLoader:
                 "device": device,
                 "offload_device": offload_device
             }
-            
+
             # Offload model if requested - move internal components to CPU
             if force_offload and mm is not None:
                 print("Offloading model components to CPU for memory management")
@@ -234,10 +230,10 @@ class SongBloomModelLoader:
                     model.compression_model.to(offload_device)
                 # Update the device attribute
                 model.device = offload_device
-            
+
             if mm is not None:
                 debug_memory_usage(device)
-            
+
             return (model_config,)
         except Exception as e:
             import traceback
@@ -249,7 +245,7 @@ class SongBloomGenerate:
     """
     Node to generate music using SongBloom model with ComfyUI model management
     """
-      
+
     @classmethod
     def INPUT_TYPES(cls):
         return {
@@ -272,42 +268,42 @@ class SongBloomGenerate:
                 "force_offload": ("BOOLEAN", {"default": True, "tooltip": "Force model offloading to CPU after generation"}),
             }
         }
-    
+
     RETURN_TYPES = ("AUDIO",)
     RETURN_NAMES = ("audio",)
     FUNCTION = "generate"
     CATEGORY = "audio/songbloom"
-    OUTPUT_NODE = True    
+    OUTPUT_NODE = True
 
-    def generate(self, model: dict, lyrics: str, audio: dict, 
-                cfg_coef: float = 1.5, temperature: float = 0.9, diff_temp: float = 0.95, steps: int = 36, 
-                use_sampling: bool = True, dit_cfg_type: str = "h", top_k: int = 100,  max_duration: float = 30.0, 
+    def generate(self, model: dict, lyrics: str, audio: dict,
+                cfg_coef: float = 1.5, temperature: float = 0.9, diff_temp: float = 0.95, steps: int = 36,
+                use_sampling: bool = True, dit_cfg_type: str = "h", top_k: int = 100,  max_duration: float = 30.0,
                 seed: int = -1, force_offload: bool = True, sampler: str = "discrete_euler", **kwargs):
         """Generate music using SongBloom with ComfyUI model management"""
         try:
             # Clean up memory before processing
             cleanup_memory()
-            
+
             # Get devices
             device, offload_device = get_devices()
-            
+
             # Use the cached model from the loader
             songbloom_model = model["model"]
             print("Model type:", type(songbloom_model))
             model_sample_rate = songbloom_model.sample_rate
-            
+
             # Use dtype from model_config, not from VAE
             dtype = model.get('dtype', 'float32')
             if dtype == 'float32':
                 model_dtype = torch.float32
             elif dtype == 'bfloat16':
                 model_dtype = torch.bfloat16
-                
+
             # Set random seed if specified
             if seed != -1:
                 torch.manual_seed(seed)
                 np.random.seed(seed)
-            
+
             # Move model components to processing device (SongBloom_Sampler doesn't have .to())
             if hasattr(songbloom_model, 'diffusion'):
                 songbloom_model.diffusion.to(device)
@@ -315,13 +311,13 @@ class SongBloomGenerate:
                 songbloom_model.compression_model.to(device)
             # Update the device attribute
             songbloom_model.device = device
-            
+
             # Reset memory stats
             reset_memory_stats(device)
-            
+
             if mm is not None:
                 debug_memory_usage(device)
-                
+
             #lyrics = lyrics.replace('\r', ' ').replace('\n', ' , ').lower()
             lyrics = '\n'.join(line.strip() for line in lyrics.split('\n'))
             lyrics = re.sub(r'\n\s*\n', r' , ', lyrics)
@@ -329,7 +325,7 @@ class SongBloomGenerate:
             lyrics = lyrics.replace("[", " [").replace("]", "] ")
             lyrics = re.sub(r' {2,}', ' ', lyrics)
             processed_lyrics = songbloom_model._process_lyric(lyrics)
-            
+
             # Process input audio and prepare attributes
             waveform = audio["waveform"]  # Shape: [batch, channels, samples]
             sample_rate = audio["sample_rate"]
@@ -352,7 +348,7 @@ class SongBloomGenerate:
                 prompt_wav = prompt_wav[..., :max_prompt_samples]
             # Prepare attributes for generation
             attributes, _ = songbloom_model._prepare_tokens_and_attributes(
-                conditions={"lyrics": [processed_lyrics], "prompt_wav": [prompt_wav]}, 
+                conditions={"lyrics": [processed_lyrics], "prompt_wav": [prompt_wav]},
                 prompt=None, prompt_tokens=None
             )
             # Set generation parameters
@@ -379,16 +375,16 @@ class SongBloomGenerate:
             print(f"Generating music with processed lyrics: {processed_lyrics[:50]}...")
             print(f"Prompt audio shape: {prompt_wav.shape}, Sample rate: {model_sample_rate}")
             print(f"Generation params: {generation_params}")
-            
+
             # Generate music - get latent representation and decode to audio with chunking
             with torch.no_grad():
                 latent_seq, token_seq = songbloom_model.diffusion.generate(None, attributes, **generation_params)
-                
+
                 # Offload diffusion model to CPU to free VRAM for decoding
                 print("Offloading diffusion model to CPU to free VRAM for decoding")
                 if hasattr(songbloom_model, 'diffusion'):
                     songbloom_model.diffusion.to(offload_device)
-                
+
                 # Force garbage collection and memory cleanup
                 if mm is not None:
                     mm.soft_empty_cache()
@@ -396,33 +392,33 @@ class SongBloomGenerate:
                     gc.collect()
                     if torch.cuda.is_available():
                         torch.cuda.empty_cache()
-                
+
                 if mm is not None:
                     debug_memory_usage(device)
-                
+
                 # Get the compression model for decoding
                 vae_model = songbloom_model.compression_model.to(device)
-                
+
                 # Get latent samples and move to model device and dtype
                 if latent_seq.dim() == 2:
                     latent_seq = latent_seq.unsqueeze(0)  # Add batch dimension
-                
+
                 vae_device = next(vae_model.parameters()).device
                 vae_dtype = next(vae_model.parameters()).dtype
                 latent_samples = latent_seq.to(device=vae_device, dtype=vae_dtype)
-                
+
                 batch_size, channels, time_frames = latent_samples.shape
-                
+
                 chunk_size = 1000
                 print(f"Decoding latent shape: {latent_samples.shape} using chunks of size {chunk_size}")
-                
+
                 # Decode with chunking for memory efficiency
                 if time_frames <= chunk_size:
                     print("Sequence short enough, decoding without chunking")
                     decoded_audio = vae_model.decode(latent_samples)
                 else:
                     decoded_chunks = []
-                    
+
                     for start_idx in range(0, time_frames, chunk_size):
                         end_idx = min(start_idx + chunk_size, time_frames)
                         print(f"Decoding chunk {start_idx}:{end_idx} ({end_idx - start_idx} frames)")
@@ -430,11 +426,11 @@ class SongBloomGenerate:
                         chunk_audio = vae_model.decode(chunk_latent)
                         decoded_chunks.append(chunk_audio)
                         del chunk_audio
-                    
+
                     print(f"Concatenating {len(decoded_chunks)} decoded chunks")
                     decoded_audio = torch.cat(decoded_chunks, dim=-1)
                     del decoded_chunks
-            
+
             # Convert to ComfyUI AUDIO format
             if decoded_audio.dim() == 2:
                 decoded_audio = decoded_audio.unsqueeze(0)  # Add batch dimension
@@ -443,7 +439,7 @@ class SongBloomGenerate:
                 "waveform": decoded_audio.float().cpu(),
                 "sample_rate": model_sample_rate
             }
-            
+
             # Offload model if requested - move internal components to CPU
             if force_offload:
                 print("Offloading model components to CPU after generation")
@@ -453,10 +449,10 @@ class SongBloomGenerate:
                     songbloom_model.compression_model.to(offload_device)
                 # Update the device attribute
                 songbloom_model.device = offload_device
-            
+
             if mm is not None:
                 debug_memory_usage(device)
-            
+
             return (output_audio,)
         except Exception as e:
             # Check if this is an interruption-related exception
